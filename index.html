@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10243d">
+<title>Photo → Text Stitcher</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1524;--panel:#14243a;--panel2:#1b304a;--line:#2c4562;--text:#f2f6fc;--muted:#a9bbd0;--blue:#57a6ff;--green:#45d6a0}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#0b1524,#10233a 65%,#0b1524);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+header{padding:22px 18px 14px;max-width:850px;margin:auto}h1{font-size:24px;margin:0 0 5px}header p{margin:0;color:var(--muted);font-size:13px}
+main{max-width:850px;margin:auto;padding:0 14px 36px;display:grid;gap:14px}.panel{background:rgba(20,36,58,.96);border:1px solid var(--line);border-radius:18px;padding:15px;box-shadow:0 10px 30px #0002}
+h2{font-size:16px;margin:0 0 12px}.row{display:flex;gap:9px;flex-wrap:wrap}.btn{border:1px solid #46617f;background:var(--panel2);color:var(--text);border-radius:12px;padding:12px 14px;font-weight:650;font-size:14px;min-height:44px;cursor:pointer;flex:1}.btn.primary{background:#176bc0;border-color:#318be0}.btn.good{background:#087b5a;border-color:#20a77e}.btn:disabled{opacity:.45;cursor:not-allowed}
+#cameraWrap{display:none;overflow:hidden;border-radius:14px;background:#000;position:relative;margin-top:12px}video{width:100%;display:block;max-height:55vh;object-fit:contain;background:#000}#cameraHint{font-size:12px;color:var(--muted);margin-top:8px}
+#preview{display:flex;gap:8px;overflow-x:auto;padding:10px 1px 2px}.thumb{position:relative;flex:0 0 88px;height:104px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#09111c}.thumb img{width:100%;height:100%;object-fit:cover}.thumb span{position:absolute;bottom:0;left:0;right:0;background:#000a;font-size:11px;text-align:center;padding:3px}
+input[type=file]{display:none}.status{font-size:13px;color:var(--muted);margin-top:10px;min-height:20px}.progress{height:7px;background:#263c55;border-radius:9px;overflow:hidden;margin-top:8px}.progress>div{height:100%;width:0;background:linear-gradient(90deg,#3989e8,#45d6a0);transition:width .2s}
+textarea{width:100%;min-height:260px;resize:vertical;border-radius:12px;border:1px solid var(--line);background:#091727;color:var(--text);padding:13px;font:14px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;outline:none}textarea:focus{border-color:var(--blue)}
+.small{font-size:12px;color:var(--muted)}.setting{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-top:10px}.setting input{accent-color:var(--blue)}
+footer{color:var(--muted);font-size:11px;text-align:center;padding:4px 15px 22px}
+@media(min-width:650px){main{grid-template-columns:1fr 1fr}.output{grid-column:1/-1}header{padding-top:30px}}
+</style>
+</head>
+<body>
+<header><h1>📷 Photo → Text Stitcher</h1><p>Capture or add several pages. OCR them in order, join the text and remove repeated lines from overlapping photos.</p></header>
+<main>
+<section class="panel">
+<h2>1. Capture or add photos</h2>
+<div class="row">
+<button class="btn primary" id="startCam">Open live camera</button>
+<button class="btn good" id="nativeCamBtn">Take photo (phone camera)</button>
+<button class="btn" id="fileBtn">Choose photos</button>
+<button class="btn" id="clearBtn">Clear all</button>
+</div>
+<input id="files" type="file" accept="image/*" multiple>
+<input id="nativeCamera" type="file" accept="image/*" capture="environment">
+<div id="cameraWrap">
+<video id="video" autoplay playsinline muted></video>
+<div class="row" style="padding:9px">
+<button class="btn good" id="snapBtn">● Capture photo</button>
+<button class="btn" id="switchBtn">Switch camera</button>
+<button class="btn" id="stopCam">Close camera</button>
+</div>
+</div>
+<div id="cameraHint">Live camera uses your phone's rear camera when available. Allow camera permission when Android asks.</div>
+<div id="secureHelp" style="display:none;margin-top:12px;padding:12px;border:1px solid #d49b42;border-radius:12px;background:#3a2b16;color:#ffe3ae;font-size:13px">
+<strong>Live camera needs HTTPS.</strong><br>
+This file is currently opened from Downloads, so Android Chrome blocks live camera preview. Upload this same HTML file to GitHub Pages or another HTTPS static host, then open its HTTPS address in Chrome. The “Take photo” button below still opens your phone camera as a workaround.
+<div class="row" style="margin-top:10px"><button class="btn" id="copyDeploy">Copy GitHub Pages steps</button></div>
+</div>
+<div id="preview"></div>
+<div class="small" id="count">No photos added yet.</div>
+</section>
+<section class="panel">
+<h2>2. Stitch settings</h2>
+<label class="setting"><input type="checkbox" id="dedupe" checked> Remove duplicate/repeated lines</label>
+<label class="setting"><input type="checkbox" id="clean" checked> Clean extra blank lines and spacing</label>
+<label class="setting"><input type="checkbox" id="number" > Add page headings</label>
+<p class="small" style="margin:14px 0 0">Tip: capture pages in reading order. Keep the repeated lines between consecutive photos if you want overlap detection to work best.</p>
+<div class="row" style="margin-top:16px"><button class="btn primary" id="runBtn" disabled>Extract & stitch text</button></div>
+<div class="status" id="status" aria-live="polite">OCR engine loads when you start extraction (internet required).</div>
+<div class="progress"><div id="bar"></div></div>
+</section>
+<section class="panel output">
+<h2>3. Combined text</h2>
+<textarea id="result" placeholder="Your stitched OCR text will appear here. You can edit it before copying or sending it to ChatGPT."></textarea>
+<div class="row" style="margin-top:10px">
+<button class="btn" id="copyBtn">Copy text</button>
+<button class="btn primary" id="chatBtn">Send to ChatGPT</button>
+<button class="btn good" id="shareBtn">Share text…</button>
+</div>
+<p class="small">“Send to ChatGPT” opens ChatGPT with your text copied to the clipboard where supported. Paste it into the chat. Share uses Android's share sheet when available.</p>
+</section>
+</main>
+<footer>OCR runs in your browser using Tesseract.js. Photos are processed on this device; the OCR library is downloaded from its CDN.</footer>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+(() => {
+ const $=id=>document.getElementById(id);
+ let photos=[],stream=null,facing='environment',worker=null;
+ const setStatus=t=>$('status').textContent=t;
+ const update=()=>{
+   $('count').textContent=photos.length?`${photos.length} photo${photos.length===1?'':'s'} added · processed in this order`:'No photos added yet.';
+   $('runBtn').disabled=!photos.length;
+   $('preview').innerHTML='';
+   photos.forEach((p,i)=>{const d=document.createElement('div');d.className='thumb';const im=document.createElement('img');im.src=p.url;const s=document.createElement('span');s.textContent=`Page ${i+1}`;d.append(im,s);$('preview').append(d)});
+ };
+ const addFiles=files=>{[...files].filter(f=>f.type.startsWith('image/')).forEach(f=>photos.push({file:f,url:URL.createObjectURL(f)}));update()};
+ $('fileBtn').onclick=()=>$('files').click();
+ $('files').onchange=e=>{addFiles(e.target.files);e.target.value=''};
+ // Android camera-app fallback: works even when live getUserMedia is blocked by file:// hosting.
+ $('nativeCamBtn').onclick=()=>$('nativeCamera').click();
+ $('nativeCamera').onchange=e=>{addFiles(e.target.files);e.target.value='';if(photos.length)setStatus('Photo added from your phone camera. You can take another or extract text.')};
+ $('clearBtn').onclick=()=>{photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];$('result').value='';$('bar').style.width='0';update();setStatus('Photos cleared.')};
+ async function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('video').srcObject=null;$('cameraWrap').style.display='none'}
+ // Detect local Downloads/file:// launch early and explain the browser security restriction.
+ if(location.protocol==='file:' || !window.isSecureContext){$('secureHelp').style.display='block';}
+ $('copyDeploy').onclick=async()=>{
+   const steps='To enable live camera: 1) Create a GitHub repository (or use an existing one). 2) Upload photo_to_ocr_stitcher.html and rename it to index.html. 3) In repository Settings → Pages, deploy from the main branch / root folder. 4) Open the generated https://...github.io/... link in Android Chrome. 5) Tap Open live camera and Allow camera permission.';
+   try{await navigator.clipboard.writeText(steps);setStatus('GitHub Pages setup steps copied.')}catch(e){setStatus(steps)}
+ };
+ async function startCamera(){
+   if(location.protocol==='file:' || !window.isSecureContext){$('secureHelp').style.display='block';setStatus('Live camera is blocked for downloaded HTML files. Open the app from an HTTPS website to use live preview.');return}
+   if(!navigator.mediaDevices?.getUserMedia){setStatus('This browser does not expose live camera access. Open the HTTPS page in Google Chrome and use “Take photo” as a fallback.');return}
+   try{
+     await stopCamera();
+     stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:1280},height:{ideal:720}}});
+     $('video').srcObject=stream;$('cameraWrap').style.display='block';
+     $('cameraHint').textContent='Camera is live. Tap Capture photo for each page.';
+     await $('video').play();setStatus('Live camera ready.')
+   }catch(e){
+     let msg=e.name==='NotAllowedError'?'Camera permission denied. In Android Settings → Apps → Chrome → Permissions, allow Camera; also allow camera for this website.':
+       e.name==='NotFoundError'?'No available camera was detected.':
+       e.name==='NotReadableError'?'Camera is busy in another app. Close other camera apps and retry.':
+       e.name==='OverconstrainedError'?'Requested camera settings are unsupported. Try switching camera.':
+       (e.message||e);
+     setStatus('Live camera could not start: '+msg+' You can still use “Take photo (phone camera)”.')
+   }
+ }
+ $('startCam').onclick=startCamera;
+ $('stopCam').onclick=stopCamera;
+ $('switchBtn').onclick=()=>{facing=facing==='environment'?'user':'environment';startCamera()};
+ $('snapBtn').onclick=()=>{
+   const v=$('video');if(!v.videoWidth){setStatus('Camera is still starting. Try again in a moment.');return}
+   const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);
+   c.toBlob(blob=>{if(blob){const file=new File([blob],`capture-${Date.now()}.jpg`,{type:'image/jpeg'});photos.push({file,url:URL.createObjectURL(file)});update();setStatus(`Captured page ${photos.length}. Keep capturing or extract the text.`)}},'image/jpeg',.92)
+ };
+ function norm(s){return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim()}
+ function stitch(pages){
+   let out=[];
+   pages.forEach((txt,idx)=>{
+     let lines=txt.replace(/\r/g,'').split('\n').map(x=>x.trim()).filter(Boolean);
+     if($('clean').checked) lines=lines.map(x=>x.replace(/[ \t]+/g,' '));
+     if($('dedupe').checked && out.length){
+       // Remove exact repeated lines anywhere in the accumulated text, plus overlap at page boundary.
+       const seen=new Set(out.map(norm).filter(x=>x.length>2));
+       let firstNew=0;
+       while(firstNew<lines.length && firstNew<12 && seen.has(norm(lines[firstNew]))) firstNew++;
+       lines=lines.filter((line,i)=>{const n=norm(line);if(n.length<=2)return true;if(seen.has(n))return false;seen.add(n);return true});
+       // Also collapse adjacent duplicates created by OCR.
+       lines=lines.filter((line,i)=>i===0||norm(line)!==norm(lines[i-1]));
+     }
+     if($('number').checked)out.push(`--- Page ${idx+1} ---`);
+     out.push(...lines);
+   });
+   return out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+ }
+ $('runBtn').onclick=async()=>{
+   if(!photos.length)return;
+   $('runBtn').disabled=true;$('bar').style.width='0';$('result').value='';
+   try{
+     if(!window.Tesseract)throw new Error('OCR library did not load. Check internet and reload this page.');
+     setStatus('Starting OCR engine…');
+     worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text'){const pct=Math.round((m.progress||0)*100);$('bar').style.width=pct+'%';setStatus(`Reading image ${current+1} of ${photos.length}… ${pct}%`)}}});
+     const pages=[];let current=0;
+     for(let i=0;i<photos.length;i++){current=i;setStatus(`Reading image ${i+1} of ${photos.length}…`);const {data}=await worker.recognize(photos[i].file);pages.push(data.text||'')}
+     await worker.terminate();worker=null;
+     $('result').value=stitch(pages);$('bar').style.width='100%';setStatus(`Done. Combined ${photos.length} image${photos.length===1?'':'s'} into one editable text.`)
+   }catch(e){if(worker){try{await worker.terminate()}catch(_){}worker=null}setStatus('OCR error: '+e.message)}
+   finally{$('runBtn').disabled=!photos.length}
+ };
+ async function copyText(){const t=$('result').value;if(!t.trim()){setStatus('Extract text first.');return false}try{await navigator.clipboard.writeText(t);setStatus('Text copied to clipboard.');return true}catch(e){$('result').focus();$('result').select();try{document.execCommand('copy');setStatus('Text copied.')}catch(_){setStatus('Select the text and copy it manually.')}return true}}
+ $('copyBtn').onclick=copyText;
+ $('chatBtn').onclick=async()=>{const t=$('result').value;if(!t.trim()){setStatus('Extract text first.');return}await copyText();window.open('https://chatgpt.com/','_blank','noopener');setStatus('ChatGPT opened. Paste the copied text into the message box.')};
+ $('shareBtn').onclick=async()=>{const t=$('result').value;if(!t.trim()){setStatus('Extract text first.');return}if(navigator.share){try{await navigator.share({title:'OCR stitched text',text:t});setStatus('Share sheet opened.')}catch(e){if(e.name!=='AbortError')setStatus('Sharing failed: '+e.message)}}else{await copyText();setStatus('Direct sharing is not supported here; text copied instead.')}};
+ window.addEventListener('pagehide',stopCamera);
+ update();
+})();
+</script>
+</body>
+</html>
